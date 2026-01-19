@@ -1,0 +1,43 @@
+# =============================================================================
+# SECRETS - Never upload these to GitHub!
+# =============================================================================
+
+# Local environment files with API keys
+.env
+.env.local
+.env.*.local
+functions/.env
+functions/.env.local
+
+# =============================================================================
+# FIREBASE
+# =============================================================================
+
+# Firebase cache and debug files
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+*-debug.log
+
+# =============================================================================
+# DEPENDENCIES
+# =============================================================================
+
+# Node modules (reinstall with npm install)
+node_modules/
+functions/node_modules/
+
+# =============================================================================
+# IDE & SYSTEM
+# =============================================================================
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini

@@ -1,0 +1,1202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Ask AI-powered questions about any YouTube video using its transcript." />
+    <meta name="theme-color" content="#667eea" />
+    <title>YouTube Video Chat</title>
+
+    <!-- 
+      =============================================================================
+      YouTube Video Chat - Frontend Application
+      =============================================================================
+      
+      A single-page application that allows users to:
+      1. Fetch transcripts from YouTube videos (via Firebase Cloud Functions + RapidAPI)
+      2. Ask AI-powered questions about the video content (via OpenAI GPT-4o-mini)
+      3. View real-time chat history (via Firestore)
+      
+      TECH STACK:
+      ┌─────────────────────────────────────────────────────────────────────────┐
+      │  Frontend (this file)                                                   │
+      │  ├── Vanilla JavaScript (ES6 Modules)                                   │
+      │  ├── Firebase SDK (App, Functions, Firestore)                           │
+      │  ├── Marked.js (Markdown → HTML)                                        │
+      │  ├── DOMPurify (XSS sanitization)                                       │
+      │  └── CSS3 (Flexbox, Gradients, Animations, CSS Variables)               │
+      └─────────────────────────────────────────────────────────────────────────┘
+      
+      SECURITY:
+      - Firebase config is safe to be public (security via Firestore rules)
+      - AI-generated markdown is sanitized via DOMPurify (prevents XSS)
+      - User input is escaped before rendering
+      - Friendly error messages (no internal details leaked)
+      
+      BROWSER SUPPORT:
+      - All modern browsers (Chrome, Firefox, Safari, Edge)
+      - ES6 module support required
+      
+      DEPLOYMENT:
+      - Hosted on Firebase Hosting
+      - Functions deployed to asia-south2 (Delhi, India)
+      
+      @author     Garima Chouhan
+      @version    1.0.0
+      @license    MIT
+      @see        https://github.com/Garima17777/youtube-video-chat
+      =============================================================================
+    -->
+
+    <!-- =========================================================================
+         EXTERNAL RESOURCES
+         ========================================================================= -->
+    
+    <!-- Google Fonts: Inter - Modern, clean typeface for UI -->
+    <link 
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" 
+      rel="stylesheet"
+    />
+
+    <!-- Marked.js: Markdown parser (converts AI responses to HTML) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- DOMPurify: HTML sanitizer (CRITICAL for XSS prevention) -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
+
+    <!-- =========================================================================
+         STYLES
+         ========================================================================= -->
+    <style>
+      /* =========================================================================
+         CSS CUSTOM PROPERTIES (Design Tokens)
+         =========================================================================
+         Centralized design tokens for easy theming and consistency.
+         Change these values to quickly update the entire UI.
+         ========================================================================= */
+      :root {
+        /* Outline styling for "bold" UI look */
+        --outline-color: rgba(0, 0, 0, 0.85);
+        --outline-width: 2px;
+
+        /* Text outline effect (creates stroke around text) */
+        --text-outline: 
+          -1px -1px 0 rgba(0, 0, 0, 0.85),
+           1px -1px 0 rgba(0, 0, 0, 0.85),
+          -1px  1px 0 rgba(0, 0, 0, 0.85),
+           1px  1px 0 rgba(0, 0, 0, 0.85);
+
+        /* Card shadow for depth */
+        --card-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+
+        /* Primary gradient (purple theme) */
+        --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        /* Secondary gradient (green theme for send button) */
+        --gradient-secondary: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        
+        /* Card header gradient */
+        --gradient-header: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+
+        /* Spacing */
+        --spacing-sm: 10px;
+        --spacing-md: 16px;
+        --spacing-lg: 20px;
+
+        /* Border radius */
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-pill: 25px;
+      }
+
+      /* =========================================================================
+         CSS RESET
+         =========================================================================
+         Normalize default browser styles for consistency.
+         ========================================================================= */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      /* =========================================================================
+         BASE STYLES
+         ========================================================================= */
+      html {
+        /* Smooth scrolling for anchor links */
+        scroll-behavior: smooth;
+      }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: var(--gradient-primary);
+        min-height: 100vh;
+        
+        /* Responsive padding: smaller on mobile, larger on desktop */
+        padding: clamp(10px, 2vw, 20px);
+        
+        /* Improve text rendering */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      /* =========================================================================
+         LAYOUT: Main Container
+         =========================================================================
+         Centers content with a max-width for readability on large screens.
+         ========================================================================= */
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        width: 100%;
+      }
+
+      /* =========================================================================
+         HEADER SECTION
+         =========================================================================
+         App title and tagline with text outline effect.
+         ========================================================================= */
+      .header {
+        text-align: center;
+        padding: 30px 0;
+        color: white;
+      }
+
+      .header h1 {
+        font-size: clamp(1.8rem, 5vw, 2.5rem); /* Responsive font size */
+        margin-bottom: var(--spacing-sm);
+        text-shadow: var(--text-outline);
+        font-weight: 700;
+      }
+
+      .header p {
+        font-size: 1.1rem;
+        opacity: 0.95;
+        text-shadow: var(--text-outline);
+      }
+
+      /* =========================================================================
+         CARD COMPONENT
+         =========================================================================
+         Reusable card with white background, shadow, and black outline.
+         ========================================================================= */
+      .card {
+        background: white;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--card-shadow);
+        overflow: hidden;
+        margin-bottom: var(--spacing-lg);
+        border: var(--outline-width) solid var(--outline-color);
+      }
+
+      .card-header {
+        background: var(--gradient-header);
+        color: white;
+        padding: var(--spacing-lg);
+        font-weight: 700;
+        font-size: 1.1rem;
+        text-shadow: var(--text-outline);
+        border-bottom: var(--outline-width) solid var(--outline-color);
+      }
+
+      .card-body {
+        padding: 22px;
+      }
+
+      /* =========================================================================
+         FORM: Input Group
+         =========================================================================
+         Horizontal layout for input + button (stacks on mobile).
+         ========================================================================= */
+      .input-group {
+        display: flex;
+        gap: var(--spacing-sm);
+        margin-bottom: 15px;
+      }
+
+      .input-group input {
+        flex: 1;
+        padding: 14px 18px;
+        border-radius: var(--radius-sm);
+        font-size: 1rem;
+        border: var(--outline-width) solid var(--outline-color);
+        transition: box-shadow 0.2s ease;
+      }
+
+      .input-group input:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.25);
+      }
+
+      /* =========================================================================
+         BUTTONS
+         =========================================================================
+         Primary (purple) and secondary (green) button variants.
+         ========================================================================= */
+      .btn {
+        padding: 14px 28px;
+        border-radius: var(--radius-sm);
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+        border: var(--outline-width) solid var(--outline-color);
+        text-shadow: var(--text-outline);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+      }
+
+      .btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+
+      .btn-primary {
+        background: var(--gradient-primary);
+        color: white;
+      }
+
+      .btn-secondary {
+        background: var(--gradient-secondary);
+        color: white;
+      }
+
+      .btn:disabled {
+        background: #cbd5e0;
+        cursor: not-allowed;
+        transform: none;
+        text-shadow: none;
+        opacity: 0.7;
+      }
+
+      /* =========================================================================
+         STATUS MESSAGES
+         =========================================================================
+         Success (green), error (red), and info (blue) status alerts.
+         ========================================================================= */
+      .status {
+        padding: 12px 16px;
+        border-radius: var(--radius-sm);
+        margin: 15px 0;
+        font-weight: 700;
+        display: none;
+        border: var(--outline-width) solid var(--outline-color);
+      }
+
+      .status.show {
+        display: block;
+      }
+
+      .status.success {
+        background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
+        color: #155724;
+      }
+
+      .status.error {
+        background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+        color: #721c24;
+      }
+
+      .status.info {
+        background: linear-gradient(135deg, #cce5ff 0%, #b8daff 100%);
+        color: #004085;
+      }
+
+      /* =========================================================================
+         CHAT CONTAINER
+         =========================================================================
+         Scrollable area for chat messages.
+         ========================================================================= */
+      .chat-container {
+        height: 420px;
+        overflow-y: auto;
+        background: #f8fafc;
+        border-radius: var(--radius-md);
+        padding: 14px;
+        margin-bottom: var(--spacing-lg);
+        border: var(--outline-width) solid var(--outline-color);
+      }
+
+      /* =========================================================================
+         CHAT MESSAGES
+         =========================================================================
+         User messages (right-aligned) and AI messages (left-aligned).
+         ========================================================================= */
+      .chat-message {
+        margin-bottom: 18px;
+        animation: fadeIn 0.25s ease;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      /* User message: aligned to the right */
+      .chat-message.user {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+
+      /* AI message: aligned to the left */
+      .chat-message.assistant {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      /* Message bubble styling */
+      .message-bubble {
+        display: inline-block;
+        max-width: 92%;
+        padding: 14px 18px;
+        border-radius: 18px;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        text-align: left;
+        border: var(--outline-width) solid var(--outline-color);
+      }
+
+      /* User bubble: purple gradient with white text */
+      .user .message-bubble {
+        background: var(--gradient-primary);
+        color: white;
+        border-bottom-right-radius: 6px;
+      }
+
+      /* AI bubble: white background with dark text */
+      .assistant .message-bubble {
+        background: white;
+        color: #2d3748;
+        border-bottom-left-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+
+      /* Message sender label */
+      .message-label {
+        font-size: 0.75rem;
+        color: #2d3748;
+        margin-bottom: 6px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+      }
+
+      /* Empty chat state */
+      .empty-chat {
+        text-align: center;
+        color: #4a5568;
+        padding: 60px 20px;
+      }
+
+      .empty-chat .icon {
+        font-size: 3rem;
+        margin-bottom: 15px;
+      }
+
+      /* =========================================================================
+         VIDEO INFO BAR
+         =========================================================================
+         Shows current video ID when transcript is loaded.
+         ========================================================================= */
+      .video-info {
+        background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+        padding: 12px 16px;
+        border-radius: var(--radius-sm);
+        margin-bottom: var(--spacing-lg);
+        display: none;
+        border: var(--outline-width) solid var(--outline-color);
+      }
+
+      .video-info.show {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .video-info .badge {
+        background: #667eea;
+        color: white;
+        padding: 4px 10px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 800;
+        border: var(--outline-width) solid var(--outline-color);
+        text-shadow: var(--text-outline);
+      }
+
+      .video-info .text {
+        color: #2d3748;
+        font-weight: 700;
+      }
+
+      /* =========================================================================
+         QUESTION INPUT AREA
+         =========================================================================
+         Pill-shaped input + send button.
+         ========================================================================= */
+      .question-input {
+        display: flex;
+        gap: var(--spacing-sm);
+      }
+
+      .question-input input {
+        flex: 1;
+        padding: 16px 20px;
+        border-radius: var(--radius-pill);
+        font-size: 1rem;
+        border: var(--outline-width) solid var(--outline-color);
+        transition: box-shadow 0.2s ease;
+      }
+
+      .question-input input:focus {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.25);
+      }
+
+      .question-input input:disabled {
+        background: #f1f5f9;
+      }
+
+      .question-input .btn {
+        border-radius: var(--radius-pill);
+        padding: 16px 30px;
+      }
+
+      /* =========================================================================
+         CLEAR CHAT BUTTON
+         ========================================================================= */
+      .clear-btn {
+        background: #718096;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 800;
+        cursor: pointer;
+        margin-left: auto;
+        display: block;
+        margin-bottom: var(--spacing-sm);
+        border: var(--outline-width) solid var(--outline-color);
+        text-shadow: var(--text-outline);
+        transition: background 0.2s ease;
+      }
+
+      .clear-btn:hover {
+        background: #4a5568;
+      }
+
+      /* =========================================================================
+         MARKDOWN CONTENT STYLING
+         =========================================================================
+         Styles for AI-generated markdown content inside message bubbles.
+         ========================================================================= */
+      
+      /* Lists */
+      .message-bubble ul,
+      .message-bubble ol {
+        margin: 10px 0;
+        padding-left: 24px;
+      }
+
+      .message-bubble li {
+        margin: 8px 0;
+        line-height: 1.6;
+      }
+
+      /* Headings */
+      .message-bubble h1,
+      .message-bubble h2,
+      .message-bubble h3 {
+        margin: 16px 0 10px 0;
+        font-weight: 700;
+        color: #2d3748;
+      }
+
+      .message-bubble h1 { font-size: 1.2rem; }
+      .message-bubble h2 { font-size: 1.1rem; }
+      .message-bubble h3 { font-size: 1rem; }
+
+      /* Paragraphs */
+      .message-bubble p {
+        margin: 10px 0;
+      }
+
+      /* Bold text */
+      .message-bubble strong {
+        font-weight: 800;
+        color: #1a202c;
+      }
+
+      /* Inline code */
+      .message-bubble code {
+        background: #edf2f7;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-family: Consolas, Monaco, 'Courier New', monospace;
+      }
+
+      /* Code blocks */
+      .message-bubble pre {
+        background: #2d3748;
+        color: #e2e8f0;
+        padding: 12px 16px;
+        border-radius: var(--radius-sm);
+        overflow-x: auto;
+        margin: 10px 0;
+      }
+
+      .message-bubble pre code {
+        background: none;
+        padding: 0;
+        color: inherit;
+      }
+
+      /* Blockquotes */
+      .message-bubble blockquote {
+        border-left: 4px solid #667eea;
+        padding-left: 16px;
+        margin: 10px 0;
+        color: #4a5568;
+        font-style: italic;
+      }
+
+      /* =========================================================================
+         THINKING ANIMATION
+         =========================================================================
+         Bouncing dots shown while waiting for AI response.
+         ========================================================================= */
+      .thinking {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .thinking-dot {
+        width: 8px;
+        height: 8px;
+        background: #667eea;
+        border-radius: 50%;
+        animation: bounce 1.4s infinite ease-in-out both;
+      }
+
+      .thinking-dot:nth-child(1) { animation-delay: -0.32s; }
+      .thinking-dot:nth-child(2) { animation-delay: -0.16s; }
+      .thinking-dot:nth-child(3) { animation-delay: 0s; }
+
+      @keyframes bounce {
+        0%, 80%, 100% { transform: scale(0); }
+        40% { transform: scale(1); }
+      }
+
+      /* =========================================================================
+         RESPONSIVE DESIGN
+         =========================================================================
+         Stack elements vertically on small screens.
+         ========================================================================= */
+      @media (max-width: 640px) {
+        .input-group,
+        .question-input {
+          flex-direction: column;
+        }
+
+        .input-group input,
+        .question-input input,
+        .btn {
+          width: 100%;
+        }
+
+        .question-input .btn {
+          border-radius: var(--radius-md);
+        }
+
+        .chat-container {
+          height: 360px;
+        }
+
+        .message-bubble {
+          max-width: 98%;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- =========================================================================
+         MAIN APPLICATION CONTAINER
+         ========================================================================= -->
+    <div class="container">
+      
+      <!-- =======================================================================
+           HEADER
+           App title and tagline
+           ======================================================================= -->
+      <header class="header">
+        <h1>🎬 YouTube Video Chat</h1>
+        <p>Ask questions about any YouTube video with AI</p>
+      </header>
+
+      <!-- =======================================================================
+           CARD 1: Video URL Input
+           User enters a YouTube URL to fetch its transcript
+           ======================================================================= -->
+      <section class="card">
+        <div class="card-header">📹 Enter YouTube Video URL</div>
+        <div class="card-body">
+          
+          <!-- URL Input + Fetch Button -->
+          <div class="input-group">
+            <input
+              type="url"
+              id="videoUrl"
+              placeholder="https://www.youtube.com/watch?v=..."
+              autocomplete="off"
+              aria-label="YouTube video URL"
+            />
+            <button class="btn btn-primary" id="btnFetch" aria-label="Fetch transcript">
+              Fetch Transcript
+            </button>
+          </div>
+          
+          <!-- Status Message (success/error/info) -->
+          <div id="fetchStatus" class="status" role="alert" aria-live="polite"></div>
+          
+        </div>
+      </section>
+
+      <!-- =======================================================================
+           CARD 2: Chat Interface
+           Shows chat history and allows asking questions
+           ======================================================================= -->
+      <section class="card">
+        <div class="card-header">💬 Chat with the Video</div>
+        <div class="card-body">
+          
+          <!-- Video Info Bar (shows when transcript is loaded) -->
+          <div id="videoInfo" class="video-info" role="status">
+            <span class="badge" id="videoIdBadge">VIDEO</span>
+            <span class="text" id="videoInfoText">Ready to chat!</span>
+          </div>
+
+          <!-- Clear Chat Button (hidden until there are messages) -->
+          <button 
+            class="clear-btn" 
+            id="btnClear" 
+            style="display: none;" 
+            aria-label="Clear chat history"
+          >
+            🗑️ Clear Chat
+          </button>
+
+          <!-- Chat Messages Container -->
+          <div 
+            class="chat-container" 
+            id="chatContainer" 
+            role="log" 
+            aria-live="polite"
+            aria-label="Chat messages"
+          >
+            <!-- Empty state (shown when no messages) -->
+            <div class="empty-chat">
+              <div class="icon">💭</div>
+              <p>Fetch a video transcript to start chatting</p>
+            </div>
+          </div>
+
+          <!-- Question Input + Send Button -->
+          <div class="question-input">
+            <input
+              type="text"
+              id="question"
+              placeholder="Ask a question about the video..."
+              disabled
+              autocomplete="off"
+              aria-label="Your question"
+            />
+            <button 
+              class="btn btn-secondary" 
+              id="btnAsk" 
+              disabled 
+              aria-label="Send question"
+            >
+              Send
+            </button>
+          </div>
+          
+        </div>
+      </section>
+
+    </div>
+
+    <!-- =========================================================================
+         JAVASCRIPT APPLICATION
+         ========================================================================= -->
+    <script type="module">
+      // =========================================================================
+      // FIREBASE SDK IMPORTS
+      // =========================================================================
+      // Using Firebase v10 modular SDK (tree-shakeable, smaller bundle)
+      
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+      
+      import { 
+        getFunctions, 
+        httpsCallable, 
+        connectFunctionsEmulator 
+      } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
+      
+      import { 
+        getFirestore, 
+        collection, 
+        query, 
+        orderBy, 
+        onSnapshot, 
+        connectFirestoreEmulator 
+      } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+      // =========================================================================
+      // FIREBASE CONFIGURATION
+      // =========================================================================
+      // This config is safe to be public. Security is enforced via:
+      // - Firestore security rules
+      // - Cloud Functions (server-side secrets)
+      // - (Optional) App Check
+      
+      const firebaseConfig = {
+        apiKey: "AIzaSyBpqa58Ozvu95sepgEDwFocF3wVbAEXBJo",
+        authDomain: "yt-assignment-001.firebaseapp.com",
+        projectId: "yt-assignment-001",
+        storageBucket: "yt-assignment-001.firebasestorage.app",
+        messagingSenderId: "730454142237",
+        appId: "1:730454142237:web:53be47dbd82afdc36685f4"
+      };
+
+      // =========================================================================
+      // FIREBASE INITIALIZATION
+      // =========================================================================
+      
+      const app = initializeApp(firebaseConfig);
+      
+      // IMPORTANT: Functions region must match where they're deployed (asia-south2)
+      const functions = getFunctions(app, "asia-south2");
+      
+      const firestore = getFirestore(app);
+
+      // =========================================================================
+      // LOCAL DEVELOPMENT: Emulator Connection
+      // =========================================================================
+      // When running locally (localhost/127.0.0.1), connect to Firebase emulators
+      // instead of production services. This allows testing without affecting
+      // real data or incurring API costs.
+      
+      if (location.hostname === "127.0.0.1" || location.hostname === "localhost") {
+        console.log("🔧 Development mode: Connecting to Firebase emulators...");
+        connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+        connectFirestoreEmulator(firestore, "127.0.0.1", 8080);
+      }
+
+      // =========================================================================
+      // CLOUD FUNCTION REFERENCES
+      // =========================================================================
+      // Create callable references to backend functions
+      
+      /** Fetches transcript from YouTube video */
+      const fetchTranscript = httpsCallable(functions, "fetchTranscript");
+      
+      /** Asks a question about the video transcript */
+      const askQuestion = httpsCallable(functions, "askQuestion");
+
+      // =========================================================================
+      // APPLICATION STATE
+      // =========================================================================
+      
+      /** Currently loaded video ID (null if none) */
+      let currentVideoId = null;
+      
+      /** Array of chat messages: [{question, answer}, ...] */
+      let chatHistory = [];
+      
+      /** Firestore subscription unsubscribe function */
+      let unsubscribe = null;
+
+      // =========================================================================
+      // DOM ELEMENT REFERENCES
+      // =========================================================================
+      // Cache DOM elements for better performance
+      
+      const chatContainer = document.getElementById("chatContainer");
+      const fetchStatus = document.getElementById("fetchStatus");
+      const videoInfo = document.getElementById("videoInfo");
+      const videoIdBadge = document.getElementById("videoIdBadge");
+      const videoInfoText = document.getElementById("videoInfoText");
+      const questionInput = document.getElementById("question");
+      const askBtn = document.getElementById("btnAsk");
+      const clearBtn = document.getElementById("btnClear");
+
+      // =========================================================================
+      // UTILITY: Friendly Error Messages
+      // =========================================================================
+      /**
+       * Converts Firebase/Cloud Function error codes to user-friendly messages.
+       * Internal error details are hidden from users for security.
+       * 
+       * @param {Error} err - Error object from Firebase callable function
+       * @returns {string} User-friendly error message
+       */
+      function friendlyError(err) {
+        const code = err?.code || "";
+
+        if (code.includes("invalid-argument")) {
+          return "Please check your input and try again.";
+        }
+        if (code.includes("not-found")) {
+          return "Transcript not found (video may not have captions).";
+        }
+        if (code.includes("failed-precondition")) {
+          return "Service not ready/configured. Please try later.";
+        }
+        if (code.includes("permission-denied")) {
+          return "Service temporarily unavailable. Please try later.";
+        }
+        if (code.includes("resource-exhausted")) {
+          return "Too many requests. Please wait and try again.";
+        }
+        if (code.includes("unavailable")) {
+          return "Service is currently unavailable. Please try again.";
+        }
+
+        // Generic fallback (don't expose internal error details)
+        return "Something went wrong. Please try again.";
+      }
+
+      // =========================================================================
+      // UTILITY: Status Messages
+      // =========================================================================
+      
+      /**
+       * Shows a status message to the user.
+       * 
+       * @param {string} msg - Message text to display
+       * @param {string} type - Message type: "success", "error", or "info"
+       */
+      function showStatus(msg, type) {
+        fetchStatus.textContent = msg;
+        fetchStatus.className = "status show " + type;
+      }
+
+      /**
+       * Hides the status message.
+       */
+      function hideStatus() {
+        fetchStatus.className = "status";
+      }
+
+      // =========================================================================
+      // UTILITY: HTML Escaping (XSS Prevention)
+      // =========================================================================
+      
+      /**
+       * Escapes HTML special characters to prevent XSS attacks.
+       * Used for user-generated content (questions).
+       * 
+       * @param {string} text - Raw text to escape
+       * @returns {string} HTML-safe escaped text
+       */
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // =========================================================================
+      // UTILITY: Safe Markdown Rendering
+      // =========================================================================
+      
+      /**
+       * Renders markdown text to sanitized HTML.
+       * 
+       * Security: Uses DOMPurify to sanitize the HTML output.
+       * This is CRITICAL because AI responses could theoretically
+       * contain malicious HTML/JS if not sanitized.
+       * 
+       * @param {string} text - Markdown text from AI response
+       * @returns {string} Sanitized HTML
+       */
+      function renderMarkdown(text) {
+        // Special case: "Thinking..." placeholder
+        if (text === "Thinking...") {
+          return `
+            <div class="thinking">
+              <span>Thinking</span>
+              <div class="thinking-dot"></div>
+              <div class="thinking-dot"></div>
+              <div class="thinking-dot"></div>
+            </div>
+          `;
+        }
+
+        // Try to use marked.js for markdown parsing
+        if (typeof marked !== "undefined" && marked.parse) {
+          try {
+            // Configure marked for GitHub-Flavored Markdown
+            marked.setOptions({ 
+              breaks: true,  // Convert \n to <br>
+              gfm: true      // GitHub-Flavored Markdown
+            });
+
+            const rawHtml = marked.parse(String(text));
+
+            // CRITICAL: Sanitize HTML with DOMPurify to prevent XSS
+            if (typeof DOMPurify !== "undefined") {
+              return DOMPurify.sanitize(rawHtml);
+            }
+
+            // Fallback if DOMPurify not loaded (should never happen)
+            console.warn("DOMPurify not available, falling back to escaped text");
+            return escapeHtml(String(text));
+            
+          } catch (e) {
+            console.error("Markdown parsing error:", e);
+            return escapeHtml(String(text));
+          }
+        }
+
+        // Fallback if marked.js not loaded
+        return escapeHtml(String(text));
+      }
+
+      // =========================================================================
+      // CHAT RENDERING
+      // =========================================================================
+      
+      /**
+       * Renders the chat history to the DOM.
+       * Called whenever chatHistory is updated.
+       */
+      function renderChat() {
+        // Show empty state if no messages
+        if (chatHistory.length === 0) {
+          chatContainer.innerHTML = `
+            <div class="empty-chat">
+              <div class="icon">💬</div>
+              <p>No messages yet. Ask a question to start!</p>
+            </div>
+          `;
+          clearBtn.style.display = "none";
+          return;
+        }
+
+        // Show clear button when there are messages
+        clearBtn.style.display = "block";
+
+        // Render all messages
+        chatContainer.innerHTML = chatHistory.map(msg => `
+          <div class="chat-message user">
+            <div class="message-label">You</div>
+            <div class="message-bubble">${escapeHtml(msg.question)}</div>
+          </div>
+          <div class="chat-message assistant">
+            <div class="message-label">AI Assistant</div>
+            <div class="message-bubble">${renderMarkdown(msg.answer)}</div>
+          </div>
+        `).join("");
+
+        // Auto-scroll to bottom to show latest message
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }
+
+      // =========================================================================
+      // CHAT ENABLEMENT
+      // =========================================================================
+      
+      /**
+       * Enables the chat interface after a transcript is loaded.
+       * - Enables input field and send button
+       * - Shows video info bar
+       */
+      function enableChat() {
+        questionInput.disabled = false;
+        askBtn.disabled = false;
+        videoInfo.classList.add("show");
+        videoIdBadge.textContent = currentVideoId;
+        videoInfoText.textContent = "Transcript loaded! Start chatting.";
+      }
+
+      // =========================================================================
+      // FIRESTORE: Real-time Chat Subscription
+      // =========================================================================
+      
+      /**
+       * Subscribes to real-time updates for chat messages from Firestore.
+       * This allows multiple tabs/users to see messages in real-time.
+       * 
+       * @param {string} videoId - YouTube video ID to subscribe to
+       */
+      function subscribeToMessages(videoId) {
+        // Unsubscribe from previous subscription (if any)
+        if (unsubscribe) {
+          unsubscribe();
+        }
+
+        // Reference to messages subcollection
+        const messagesRef = collection(firestore, "videos", videoId, "messages");
+        
+        // Query messages ordered by creation time (oldest first)
+        const q = query(messagesRef, orderBy("createdAt", "asc"));
+
+        // Subscribe to real-time updates
+        unsubscribe = onSnapshot(q, (snapshot) => {
+          // Rebuild chat history from Firestore documents
+          chatHistory = [];
+          snapshot.forEach((doc) => {
+            const data = doc.data();
+            chatHistory.push({
+              question: data.question,
+              answer: data.answer
+            });
+          });
+          
+          // Re-render chat with new data
+          renderChat();
+          
+        }, (error) => {
+          console.error("Firestore subscription error:", error);
+        });
+      }
+
+      // =========================================================================
+      // EVENT HANDLER: Fetch Transcript
+      // =========================================================================
+      
+      document.getElementById("btnFetch").onclick = async () => {
+        // Get and validate URL input
+        const videoUrl = document.getElementById("videoUrl").value.trim();
+        
+        if (!videoUrl) {
+          showStatus("Please enter a YouTube URL", "error");
+          return;
+        }
+
+        // Show loading status
+        showStatus("Fetching transcript... This may take a few seconds.", "info");
+        
+        // Clear previous chat
+        chatHistory = [];
+        renderChat();
+
+        try {
+          // Call Cloud Function to fetch transcript
+          const res = await fetchTranscript({ videoUrl });
+          currentVideoId = res.data.videoId;
+
+          // Show success message
+          showStatus(
+            `✅ Transcript fetched! (${res.data.transcriptLength.toLocaleString()} characters)`,
+            "success"
+          );
+
+          // Enable chat interface
+          enableChat();
+          
+          // Subscribe to real-time message updates
+          subscribeToMessages(currentVideoId);
+          
+          // Auto-hide success message after 3 seconds
+          setTimeout(hideStatus, 3000);
+          
+        } catch (err) {
+          console.error("Fetch transcript error:", err);
+          showStatus("❌ " + friendlyError(err), "error");
+        }
+      };
+
+      // =========================================================================
+      // EVENT HANDLER: Ask Question
+      // =========================================================================
+      
+      document.getElementById("btnAsk").onclick = async () => {
+        // Ensure a video is loaded
+        if (!currentVideoId) return;
+
+        // Get and validate question input
+        const question = questionInput.value.trim();
+        if (!question) return;
+
+        // Optimistic UI: Show user message immediately with "Thinking..." placeholder
+        chatHistory.push({ question, answer: "Thinking..." });
+        renderChat();
+
+        // Clear input and disable while processing
+        questionInput.value = "";
+        questionInput.disabled = true;
+        askBtn.disabled = true;
+
+        try {
+          // Call Cloud Function to get AI answer
+          const res = await askQuestion({ videoId: currentVideoId, question });
+          
+          // Update the placeholder with real answer
+          chatHistory[chatHistory.length - 1].answer = res.data.answer;
+          renderChat();
+          
+        } catch (err) {
+          console.error("Ask question error:", err);
+          
+          // Show error in the message bubble
+          chatHistory[chatHistory.length - 1].answer = "❌ " + friendlyError(err);
+          renderChat();
+          
+        } finally {
+          // Re-enable input regardless of success/failure
+          questionInput.disabled = false;
+          askBtn.disabled = false;
+          questionInput.focus();
+        }
+      };
+
+      // =========================================================================
+      // EVENT HANDLER: Clear Chat
+      // =========================================================================
+      
+      clearBtn.onclick = () => {
+        // Note: This only clears local chat history.
+        // Messages in Firestore are NOT deleted.
+        chatHistory = [];
+        renderChat();
+      };
+
+      // =========================================================================
+      // EVENT HANDLER: Enter Key to Submit
+      // =========================================================================
+      
+      questionInput.onkeypress = (e) => {
+        if (e.key === "Enter" && !askBtn.disabled) {
+          askBtn.click();
+        }
+      };
+
+      // =========================================================================
+      // INITIALIZATION LOG
+      // =========================================================================
+      
+      console.log("🎬 YouTube Video Chat initialized");
+      console.log(`📍 Functions region: asia-south2`);
+      console.log(`🔥 Firestore project: ${firebaseConfig.projectId}`);
+      
+    </script>
+  </body>
+</html>

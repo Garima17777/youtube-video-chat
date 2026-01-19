@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// =============================================================================
+// FIRESTORE SECURITY RULES
+// =============================================================================
+// These rules control who can read/write data in your database.
+// 
+// Key concepts:
+// - "match" = which documents these rules apply to
+// - "allow read" = who can view data
+// - "allow write" = who can create/update/delete data
+// - "if true" = allow everyone
+// - "if false" = allow no one (only backend/admin can access)
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =========================================================================
+    // VIDEOS COLLECTION
+    // Path: /videos/{videoId}
+    // Contains: transcript, videoUrl, lang, etc.
+    // =========================================================================
+    match /videos/{videoId} {
+      
+      // READING: Anyone can read video data
+      // Why? The frontend needs to check if transcript exists
+      allow read: if true;
+      
+      // WRITING: Nobody can write directly from frontend
+      // Why? Only our Cloud Functions should create/update videos
+      // Cloud Functions use Admin SDK which bypasses these rules
+      allow write: if false;
+      
+      // =====================================================================
+      // MESSAGES SUBCOLLECTION
+      // Path: /videos/{videoId}/messages/{messageId}
+      // Contains: question, answer, createdAt
+      // =====================================================================
+      match /messages/{messageId} {
+        
+        // READING: Anyone can read messages
+        // Why? The frontend displays chat history
+        allow read: if true;
+        
+        // WRITING: Nobody can write directly from frontend
+        // Why? Only Cloud Functions should create messages
+        allow write: if false;
+      }
+    }
+    
+    // =========================================================================
+    // DEFAULT RULE: Deny everything else
+    // Any collection/document not explicitly mentioned above is blocked
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
