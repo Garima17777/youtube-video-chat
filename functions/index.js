@@ -1,27 +1,55 @@
 /**
  * =============================================================================
- * YouTube Video Chat - Firebase Cloud Functions (v2.0)
+ * YouTube Video Chat - Firebase Cloud Functions
  * =============================================================================
  *
- * @fileoverview Production-ready Cloud Functions with advanced RAG pipeline.
+ * This module provides the backend for a YouTube video chat application.
+ * Users can fetch transcripts from YouTube videos and ask AI-powered questions.
  *
- * @version      2.0.0
- * @author       Your Name
- * @license      MIT
+ * FUNCTIONS:
+ * - fetchTranscript: Fetches YouTube transcript via RapidAPI, stores in Firestore
+ * - askQuestion: Answers questions using OpenAI GPT with RAG (Retrieval-Augmented Generation)
  *
- * @description
- * This module provides two main functions:
- * - fetchTranscript: Fetches YouTube transcripts via RapidAPI
- * - askQuestion: Answers questions using RAG + OpenAI
+ * ARCHITECTURE:
+ * ┌─────────────┐      ┌─────────────----─┐         ┌─────────────┐
+ * │   Frontend  │────▶│  fetchTranscript  │────▶   │  RapidAPI   │
+ * │  (Browser)  │      │   (Function)     │         │ (Transcript)│
+ * └─────────────┘      └─────────----─────┘         └─────────────┘
+ *        │                   │
+ *        │                   ▼
+ *        │            ┌─────────────┐
+ *        │            │  Firestore  │
+ *        │            │  (Storage)  │
+ *        │            └─────────────┘
+ *        │                   ▲
+ *        ▼                   │
+ * ┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+ * │   Frontend  │ ───▶│  askQuestion │───▶│   OpenAI    │
+ * │  (Browser)  │     │   (Function) │     │  (GPT-4o)   │
+ * └─────────────┘     └──────────────┘     └─────────────┘
  *
- * @improvements (v2.0)
- * - Semantic retrieval using embeddings
- * - Hybrid retrieval (keywords + embeddings)
- * - Better prompt engineering
- * - Stop word removal
- * - Configurable parameters
- * - Modular code structure
+ * SECURITY:
+ * - Secrets stored in Google Secret Manager (OPENAI_API_KEY, RAPIDAPI_KEY)
+ * - Input validation on all user inputs
+ * - Safe error messages (no internal details leaked to clients)
+ * - Structured logging for debugging (logs stay server-side)
  *
+ * FIRESTORE STRUCTURE:
+ * videos/{videoId}
+ *   ├── videoId: string
+ *   ├── videoUrl: string
+ *   ├── transcript: string
+ *   ├── lang: string
+ *   └── updatedAt: timestamp
+ *   └── messages/{messageId}
+ *         ├── question: string
+ *         ├── answer: string
+ *         └── createdAt: timestamp
+ *
+ * @author      Garima Chouhan
+ * @version     1.0.0
+ * @license     MIT
+ * @see         https://github.com/Garima17777/youtube-video-chat
  * =============================================================================
  */
 
